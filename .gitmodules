@@ -1,0 +1,6 @@
+[submodule "third_party/triton-shared"]
+	path = third_party/triton-shared
+	url = https://github.com/facebookincubator/triton-shared.git
+[submodule "third_party/litert"]
+	path = third_party/litert
+	url = https://github.com/google-ai-edge/LiteRT.git
