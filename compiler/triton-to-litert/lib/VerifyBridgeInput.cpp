@@ -7,6 +7,7 @@
 #include "TritonToLiteRT/Bridge.h"
 
 #include "BridgeInput.h"
+#include "StructuredInput.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -33,16 +34,6 @@
 namespace mlir::triton_to_litert {
 namespace {
 
-bool hasMilestoneShape(RankedTensorType type) {
-  return type && type.hasStaticShape() && type.getRank() == 1 &&
-         type.getShape() == ArrayRef<int64_t>{kMilestoneExtent};
-}
-
-bool isMilestoneTensor(Type type) {
-  auto tensor = dyn_cast<RankedTensorType>(type);
-  return hasMilestoneShape(tensor) && tensor.getElementType().isF32();
-}
-
 bool hasStaticUnitLaunch(ModuleOp module) {
   auto launchGrid =
       module->getAttrOfType<DenseI64ArrayAttr>(kLaunchGridAttrName);
@@ -51,25 +42,13 @@ bool hasStaticUnitLaunch(ModuleOp module) {
                       [](int64_t extent) { return extent == 1; });
 }
 
-bool hasMilestoneModelABI(ModuleOp module) {
-  auto roles = module->getAttrOfType<ArrayAttr>(kBufferRolesAttrName);
-  if (!roles || roles.size() != kModelBufferCount ||
-      !module->hasAttrOfType<UnitAttr>(kBuffersDistinctAttrName))
-    return false;
-
-  constexpr std::array<StringLiteral, kModelBufferCount> expectedRoles = {
-      "input", "input", "output"};
-  return llvm::all_of(llvm::zip_equal(roles, expectedRoles), [](auto pair) {
-    auto role = dyn_cast<StringAttr>(std::get<0>(pair));
-    return role && role.getValue() == std::get<1>(pair);
-  });
-}
-
-bool isAllowedMilestoneOperation(StringRef operationName) {
+bool isAllowedMilestoneOperation(StringRef operationName,
+                                 MilestoneOperationStage stage) {
   return llvm::StringSwitch<bool>(operationName)
       .Cases({"builtin.module", "func.func", "func.return"}, true)
-      .Cases({"arith.constant", "arith.muli", "arith.index_cast", "arith.addf"},
-             true)
+      .Case("arith.addf", true)
+      .Cases({"arith.constant", "arith.muli", "arith.index_cast"},
+             stage == MilestoneOperationStage::BridgeInput)
       .Cases({"tensor.empty", "linalg.generic", "linalg.yield"}, true)
       .Cases({"tts.make_tptr", "tts.load", "tts.store"}, true)
       .Default(false);
@@ -83,11 +62,20 @@ bool isUnstructuredMemoryOperation(StringRef operationName) {
       .Default(false);
 }
 
-LogicalResult validateOperationAllowlist(ModuleOp module) {
+LogicalResult validateOperationAllowlistImpl(ModuleOp module,
+                                             MilestoneOperationStage stage) {
   WalkResult result = module.walk([&](Operation *operation) {
     StringRef operationName = operation->getName().getStringRef();
-    if (isAllowedMilestoneOperation(operationName))
+    if (isAllowedMilestoneOperation(operationName, stage))
       return WalkResult::advance();
+
+    if (stage == MilestoneOperationStage::NormalizedBridgePreparation) {
+      operation->emitError()
+          << "Triton-to-LiteRT normalized bridge preparation does not support "
+             "operation '"
+          << operationName << "'";
+      return WalkResult::interrupt();
+    }
 
     StringRef dialectNamespace = operation->getName().getDialectNamespace();
     if (operationName == "arith.trunci" || operationName == "arith.truncf") {
@@ -127,26 +115,6 @@ bool isConstantInteger(Value value, int64_t expected) {
          constant.getSExtValue() == expected;
 }
 
-bool isCanonicalTileOffset(Value offset, func::FuncOp function) {
-  if (function.getNumArguments() <= kProgramIdXArgument)
-    return false;
-
-  auto indexCast = offset.getDefiningOp<arith::IndexCastOp>();
-  if (!indexCast || !indexCast.getIn().getType().isInteger(32) ||
-      !indexCast.getOut().getType().isIndex())
-    return false;
-
-  auto multiply = indexCast.getIn().getDefiningOp<arith::MulIOp>();
-  if (!multiply)
-    return false;
-
-  Value programIdX = function.getArgument(kProgramIdXArgument);
-  return (multiply.getLhs() == programIdX &&
-          isConstantInteger(multiply.getRhs(), kMilestoneExtent)) ||
-         (multiply.getRhs() == programIdX &&
-          isConstantInteger(multiply.getLhs(), kMilestoneExtent));
-}
-
 LogicalResult validateEntryBlockPlacement(Operation *operation,
                                           const Twine &semanticClass) {
   auto function = operation->getParentOfType<func::FuncOp>();
@@ -160,84 +128,14 @@ LogicalResult validateEntryBlockPlacement(Operation *operation,
   return failure();
 }
 
-LogicalResult emitStructuredLayoutError(tts::MakeTensorPtrOp operation,
-                                        const Twine &property) {
-  operation.emitError()
-      << "Triton-to-LiteRT Bridge Input unsupported structured pointer "
-         "layout: "
-      << property;
-  return failure();
-}
-
 LogicalResult validateStructuredPointer(tts::MakeTensorPtrOp operation) {
-  auto resultType = dyn_cast<RankedTensorType>(operation.getResult().getType());
-  if (!resultType || resultType.getRank() != 1)
-    return emitStructuredLayoutError(
-        operation, "result must be rank-1 tensor<1024x!tt.ptr<f32>>");
-
-  auto resultPointerType =
-      dyn_cast<triton::PointerType>(resultType.getElementType());
-  auto basePointerType =
-      dyn_cast<triton::PointerType>(operation.getBase().getType());
-  if (!resultPointerType || !basePointerType ||
-      !resultPointerType.getPointeeType().isF32() ||
-      !basePointerType.getPointeeType().isF32())
-    return emitStructuredLayoutError(operation, "element type must be f32");
-
-  if (operation.getSizes() != ArrayRef<int64_t>{kMilestoneExtent})
-    return emitStructuredLayoutError(operation,
-                                     "size must be static extent 1024");
-  if (!hasMilestoneShape(resultType))
-    return emitStructuredLayoutError(
-        operation, "result must be rank-1 tensor<1024x!tt.ptr<f32>>");
-  if (!operation.getStrides().empty() ||
-      operation.getStaticStrides() != ArrayRef<int64_t>{1})
-    return emitStructuredLayoutError(
-        operation, "stride must be static positive unit stride");
-
-  if (!operation.getShape().empty() ||
-      operation.getStaticShape() != ArrayRef<int64_t>{0})
-    return emitStructuredLayoutError(
-        operation, "shape must disable wraparound and broadcasting");
-  if (!operation.getOrder().empty())
-    return emitStructuredLayoutError(operation, "order must be empty");
-
-  if (operation.getOffsets().size() != 1 ||
-      operation.getStaticOffsets() != ArrayRef<int64_t>{ShapedType::kDynamic} ||
-      !isCanonicalTileOffset(operation.getOffsets().front(),
-                             operation->getParentOfType<func::FuncOp>()))
-    return emitStructuredLayoutError(
-        operation, "offset must be the canonical program_id.x tile expression");
-
-  return success();
+  return success(succeeded(analyzeMilestoneStructuredPointer(
+      operation, StructuredPointerOffsetForm::CanonicalLaunchExpression)));
 }
 
 LogicalResult validateStructuredLoad(tts::LoadOp operation) {
-  if (operation.hasMask() || operation.getOther()) {
-    operation.emitError(
-        "Triton-to-LiteRT Bridge Input structured access must be unmasked "
-        "and cover the full tensor");
-    return failure();
-  }
-
-  if (!isMilestoneTensor(operation.getResult().getType())) {
-    operation.emitError(
-        "Triton-to-LiteRT Bridge Input rank-1 f32 tensors must have static "
-        "extent 1024");
-    return failure();
-  }
-
-  auto pointer = operation.getPtr().getDefiningOp<tts::MakeTensorPtrOp>();
-  auto function = operation->getParentOfType<func::FuncOp>();
-  if (!pointer || !function || function.getNumArguments() < kModelBufferCount ||
-      (pointer.getBase() != function.getArgument(kLhsBufferArgument) &&
-       pointer.getBase() != function.getArgument(kRhsBufferArgument))) {
-    operation.emitError(
-        "Triton-to-LiteRT Bridge Input model ABI cannot be functionalized: "
-        "loads must use a declared read-only input buffer");
-    return failure();
-  }
-  return success();
+  return success(succeeded(analyzeMilestoneStructuredInputLoad(
+      operation, StructuredPointerOffsetForm::CanonicalLaunchExpression)));
 }
 
 LogicalResult validateStructuredStore(tts::StoreOp operation) {
@@ -611,7 +509,8 @@ LogicalResult verifyMilestoneBridgeInput(ModuleOp module) {
     return failure();
   }
 
-  if (failed(validateOperationAllowlist(module)))
+  if (failed(validateOperationAllowlistImpl(
+          module, MilestoneOperationStage::BridgeInput)))
     return failure();
 
   WalkResult result = module.walk([&](Operation *operation) {
@@ -703,6 +602,26 @@ analyzeMilestoneLaunchContract(func::FuncOp function) {
   return analyzeMilestoneLaunchContractImpl(function);
 }
 
+bool hasMilestoneModelABI(ModuleOp module) {
+  auto roles = module->getAttrOfType<ArrayAttr>(kBufferRolesAttrName);
+  if (!roles || roles.size() != kModelBufferCount ||
+      !module->hasAttrOfType<UnitAttr>(kBuffersDistinctAttrName))
+    return false;
+
+  constexpr std::array<StringLiteral, kModelBufferCount> expectedRoles = {
+      "input", "input", "output"};
+  return llvm::all_of(llvm::zip_equal(roles, expectedRoles), [](auto pair) {
+    auto role = dyn_cast<StringAttr>(std::get<0>(pair));
+    return role && role.getValue() == std::get<1>(pair);
+  });
+}
+
+LogicalResult
+validateMilestoneOperationAllowlist(ModuleOp module,
+                                    MilestoneOperationStage stage) {
+  return validateOperationAllowlistImpl(module, stage);
+}
+
 std::unique_ptr<Pass> createVerifyBridgeInputPass() {
   return std::make_unique<VerifyBridgeInputPass>();
 }
@@ -710,6 +629,7 @@ std::unique_ptr<Pass> createVerifyBridgeInputPass() {
 void registerTritonToLiteRTBridgePasses() {
   static PassRegistration<VerifyBridgeInputPass> registration;
   registerNormalizeLaunchMetadataPass();
+  registerExtractStructuredInputSemanticsPass();
 }
 
 } // namespace mlir::triton_to_litert

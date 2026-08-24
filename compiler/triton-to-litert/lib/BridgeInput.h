@@ -39,7 +39,16 @@ inline constexpr unsigned kProgramIdXArgument = 6;
 inline constexpr unsigned kMilestoneArgumentCount =
     kModelBufferCount + kLaunchArgumentCount;
 
+enum class MilestoneOperationStage {
+  BridgeInput,
+  NormalizedBridgePreparation,
+};
+
 LogicalResult verifyMilestoneBridgeInput(ModuleOp module);
+bool hasMilestoneModelABI(ModuleOp module);
+LogicalResult
+validateMilestoneOperationAllowlist(ModuleOp module,
+                                    MilestoneOperationStage stage);
 
 /// Revalidate and return the structured pointers fed by the canonical
 /// milestone-1 launch-offset expression.  Keeping this analysis shared makes

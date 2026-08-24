@@ -49,7 +49,7 @@ module attributes {
   }
 }
 
-// PIPELINE: Pass Manager with 7 passes:
+// PIPELINE: Pass Manager with 8 passes:
 // PIPELINE: builtin.module(
 // PIPELINE-NEXT:   triton-to-structured
 // PIPELINE-NEXT:   cse
@@ -60,6 +60,7 @@ module attributes {
 // PIPELINE-SAME: tensor-ptr-to-linalg=false
 // PIPELINE-NEXT:   verify-triton-to-litert-bridge-input
 // PIPELINE-NEXT:   normalize-triton-to-litert-launch-metadata
+// PIPELINE-NEXT:   extract-triton-to-litert-structured-input-semantics
 
 // BRIDGE-NOT: triton_to_litert.launch_grid
 // BRIDGE-LABEL: func.func @vector_add(

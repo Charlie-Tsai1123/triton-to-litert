@@ -18,11 +18,13 @@ namespace triton_to_litert {
 
 std::unique_ptr<Pass> createVerifyBridgeInputPass();
 std::unique_ptr<Pass> createNormalizeLaunchMetadataPass();
+std::unique_ptr<Pass> createExtractStructuredInputSemanticsPass();
 
 void buildTritonToLiteRTBridgePipeline(OpPassManager &passManager);
 
 void registerTritonToLiteRTBridgePasses();
 void registerNormalizeLaunchMetadataPass();
+void registerExtractStructuredInputSemanticsPass();
 void registerTritonToLiteRTBridgePipeline();
 
 } // namespace triton_to_litert
