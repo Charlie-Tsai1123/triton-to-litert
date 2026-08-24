@@ -5,6 +5,7 @@ import lit.llvm
 config.triton_to_litert_obj_root = "@TRITON_TO_LITERT_BINARY_DIR@"
 config.triton_to_litert_tools_dir = "@TRITON_TO_LITERT_BINARY_DIR@/tools/triton-to-litert-opt"
 config.triton_shared_tools_dir = "@TRITON_TO_LITERT_TRITON_SHARED_BINARY_DIR@/tools/triton-shared-opt"
+config.triton_to_litert_litert_opt = "@TRITON_TO_LITERT_LITERT_OPT@"
 config.llvm_tools_dir = "@LLVM_TOOLS_DIR@"
 config.mlir_binary_dir = "@MLIR_BINARY_DIR@"
 config.python_executable = "@Python3_EXECUTABLE@"

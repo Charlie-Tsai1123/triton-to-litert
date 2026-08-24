@@ -14,6 +14,7 @@
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
 #include "tflite/converter/ir/tfl_ops.h"
+#include "llvm/Support/raw_ostream.h"
 
 int main(int argc, char **argv) {
   mlir::triton_to_litert::registerBridgeToTFLPasses();
@@ -23,6 +24,10 @@ int main(int argc, char **argv) {
                   mlir::linalg::LinalgDialect, mlir::tensor::TensorDialect,
                   mlir::TFL::TensorFlowLiteDialect>();
 
-  return mlir::asMainReturnCode(mlir::MlirOptMain(
-      argc, argv, "Triton-to-LiteRT Bridge IR optimizer\n", registry));
+  mlir::LogicalResult result = mlir::MlirOptMain(
+      argc, argv, "Triton-to-LiteRT Bridge IR optimizer\n", registry);
+  if (mlir::failed(result))
+    llvm::errs() << "LiteRT-side Bridge IR verification failed; underlying "
+                    "parser or verifier diagnostic precedes this message\n";
+  return mlir::asMainReturnCode(result);
 }

@@ -29,3 +29,18 @@ llvm_config.add_tool_substitutions(
     ],
     tool_dirs,
 )
+
+if os.path.isfile(config.triton_to_litert_litert_opt) and os.access(
+    config.triton_to_litert_litert_opt, os.X_OK
+):
+    config.available_features.add("litert-side-bridge")
+    llvm_config.add_tool_substitutions(
+        [
+            ToolSubst(
+                "linalg-to-tfl-opt",
+                command=config.triton_to_litert_litert_opt,
+                unresolved="fatal",
+            )
+        ],
+        [],
+    )

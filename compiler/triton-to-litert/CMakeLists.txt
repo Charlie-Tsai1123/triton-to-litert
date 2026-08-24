@@ -27,6 +27,12 @@ set(
   TRITON_TO_LITERT_TRITON_SHARED_BINARY_DIR
   "${CMAKE_BINARY_DIR}/third_party/triton_shared"
 )
+set(
+  TRITON_TO_LITERT_LITERT_OPT
+  "${TRITON_TO_LITERT_REPOSITORY_ROOT}/third_party/litert/bazel-bin/litert/linalg_to_tfl_bridge/linalg-to-tfl-opt"
+  CACHE FILEPATH
+  "LiteRT-revision bridge consumer used by cross-revision integration tests"
+)
 
 include_directories("${TRITON_TO_LITERT_SOURCE_DIR}/include")
 include_directories("${TRITON_TO_LITERT_TRITON_SHARED_SOURCE_DIR}/include")
