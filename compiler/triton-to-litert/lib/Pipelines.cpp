@@ -28,12 +28,13 @@ void buildTritonToLiteRTBridgePipeline(OpPassManager &passManager) {
   passManager.addPass(triton::createTritonArithToLinalg(arithmeticOptions));
 
   passManager.addPass(createVerifyBridgeInputPass());
+  passManager.addPass(createNormalizeLaunchMetadataPass());
 }
 
 void registerTritonToLiteRTBridgePipeline() {
   static PassPipelineRegistration<> registration(
       "triton-to-litert-bridge",
-      "Recover Triton memory/computation semantics and stop at Bridge Input",
+      "Recover Triton semantics and normalize the milestone-1 launch",
       buildTritonToLiteRTBridgePipeline);
 }
 

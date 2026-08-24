@@ -17,10 +17,12 @@ class OpPassManager;
 namespace triton_to_litert {
 
 std::unique_ptr<Pass> createVerifyBridgeInputPass();
+std::unique_ptr<Pass> createNormalizeLaunchMetadataPass();
 
 void buildTritonToLiteRTBridgePipeline(OpPassManager &passManager);
 
 void registerTritonToLiteRTBridgePasses();
+void registerNormalizeLaunchMetadataPass();
 void registerTritonToLiteRTBridgePipeline();
 
 } // namespace triton_to_litert

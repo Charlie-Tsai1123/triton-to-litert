@@ -6,7 +6,7 @@
 // RUN: FileCheck %s --input-file=%t.bridge --check-prefix=STORES
 // RUN: triton-to-litert-opt --pass-pipeline='builtin.module(triton-to-litert-bridge)' --dump-pass-pipeline %s 2>&1 | FileCheck %s --check-prefix=PIPELINE
 // RUN: triton-to-litert-opt --pass-pipeline='builtin.module(triton-to-structured,cse,canonicalize,triton-to-unstructured,triton-arith-to-linalg{tensor-ptr-to-linalg=false pids-to-func-args=true})' %s > %t.prefix
-// RUN: diff %t.prefix %t.bridge
+// RUN: FileCheck %s --input-file=%t.prefix --check-prefix=PREFIX
 // RUN: triton-shared-opt --triton-to-linalg-experimental %s | FileCheck %s --check-prefix=REFERENCE
 
 module attributes {
@@ -49,7 +49,7 @@ module attributes {
   }
 }
 
-// PIPELINE: Pass Manager with 6 passes:
+// PIPELINE: Pass Manager with 7 passes:
 // PIPELINE: builtin.module(
 // PIPELINE-NEXT:   triton-to-structured
 // PIPELINE-NEXT:   cse
@@ -59,17 +59,20 @@ module attributes {
 // PIPELINE-SAME: pids-to-func-args=true
 // PIPELINE-SAME: tensor-ptr-to-linalg=false
 // PIPELINE-NEXT:   verify-triton-to-litert-bridge-input
+// PIPELINE-NEXT:   normalize-triton-to-litert-launch-metadata
 
+// BRIDGE-NOT: triton_to_litert.launch_grid
 // BRIDGE-LABEL: func.func @vector_add(
 // BRIDGE-SAME: !tt.ptr<f32>
 // BRIDGE-SAME: !tt.ptr<f32>
 // BRIDGE-SAME: !tt.ptr<f32>
-// BRIDGE-SAME: i32
-// BRIDGE-SAME: i32
-// BRIDGE-SAME: i32
-// BRIDGE-SAME: i32
-// BRIDGE-SAME: i32
-// BRIDGE-SAME: i32
+// BRIDGE-SAME: ) {
+// BRIDGE-NOT: arith.constant
+// BRIDGE-NOT: arith.muli
+// BRIDGE-NOT: arith.index_cast
+// BRIDGE: offsets: [0]
+// BRIDGE: offsets: [0]
+// BRIDGE: offsets: [0]
 // BRIDGE-NOT: tt.func
 // BRIDGE-NOT: tt.get_program_id
 // BRIDGE-NOT: tt.make_range
@@ -81,6 +84,21 @@ module attributes {
 // BRIDGE-NOT: memref
 // BRIDGE-NOT: bufferization
 // BRIDGE-NOT: "tfl.
+
+// PREFIX: triton_to_litert.launch_grid = array<i64: 1, 1, 1>
+// PREFIX-LABEL: func.func @vector_add(
+// PREFIX-SAME: !tt.ptr<f32>
+// PREFIX-SAME: !tt.ptr<f32>
+// PREFIX-SAME: !tt.ptr<f32>
+// PREFIX-SAME: i32
+// PREFIX-SAME: i32
+// PREFIX-SAME: i32
+// PREFIX-SAME: i32
+// PREFIX-SAME: i32
+// PREFIX-SAME: i32
+// PREFIX: arith.muli
+// PREFIX: arith.index_cast
+// PREFIX: offsets: [
 
 // MAKERS-COUNT-3: tts.make_tptr
 // MAKERS-NOT: tts.make_tptr

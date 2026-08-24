@@ -1,5 +1,6 @@
 add_triton_object(TritonToLiteRTBridge
   Pipelines.cpp
+  NormalizeLaunchMetadata.cpp
   VerifyBridgeInput.cpp
 
   LINK_LIBS PUBLIC

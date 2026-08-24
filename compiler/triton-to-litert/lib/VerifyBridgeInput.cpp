@@ -6,6 +6,8 @@
 
 #include "TritonToLiteRT/Bridge.h"
 
+#include "BridgeInput.h"
+
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
@@ -30,22 +32,6 @@
 
 namespace mlir::triton_to_litert {
 namespace {
-
-constexpr StringLiteral kLaunchGridAttrName = "triton_to_litert.launch_grid";
-constexpr StringLiteral kBufferRolesAttrName = "triton_to_litert.buffer_roles";
-constexpr StringLiteral kBuffersDistinctAttrName =
-    "triton_to_litert.buffers_distinct";
-constexpr int64_t kMilestoneExtent = 1024;
-constexpr unsigned kLhsBufferArgument = 0;
-constexpr unsigned kRhsBufferArgument = 1;
-constexpr unsigned kOutputBufferArgument = 2;
-constexpr unsigned kInputBufferCount = 2;
-constexpr unsigned kModelBufferCount = 3;
-constexpr unsigned kLaunchDimensionCount = 3;
-constexpr unsigned kLaunchArgumentCount = 6;
-constexpr unsigned kProgramIdXArgument = 6;
-constexpr unsigned kMilestoneArgumentCount =
-    kModelBufferCount + kLaunchArgumentCount;
 
 bool hasMilestoneShape(RankedTensorType type) {
   return type && type.hasStaticShape() && type.getRank() == 1 &&
@@ -362,7 +348,8 @@ validateCandidateGeneric(linalg::GenericOp generic, ArrayRef<tts::LoadOp> loads,
   return success();
 }
 
-LogicalResult validateCanonicalLaunchArithmetic(func::FuncOp function) {
+FailureOr<SmallVector<tts::MakeTensorPtrOp>>
+analyzeMilestoneLaunchContractImpl(func::FuncOp function) {
   SmallVector<arith::ConstantOp> constants;
   SmallVector<arith::MulIOp> multiplies;
   SmallVector<arith::IndexCastOp> casts;
@@ -421,19 +408,25 @@ LogicalResult validateCanonicalLaunchArithmetic(func::FuncOp function) {
   }
 
   arith::IndexCastOp cast = casts.front();
-  if (!llvm::all_of(
-          cast.getResult().getUsers(),
-          [](Operation *user) { return isa<tts::MakeTensorPtrOp>(user); }) ||
-      std::distance(cast.getResult().user_begin(),
-                    cast.getResult().user_end()) !=
-          static_cast<std::ptrdiff_t>(kModelBufferCount)) {
+  SmallVector<tts::MakeTensorPtrOp> pointers;
+  for (Operation *user : cast.getResult().getUsers()) {
+    auto pointer = dyn_cast<tts::MakeTensorPtrOp>(user);
+    if (!pointer) {
+      cast.emitError(
+          "Triton-to-LiteRT Bridge Input milestone 1 requires the canonical "
+          "launch offset to feed exactly three structured pointers");
+      return failure();
+    }
+    pointers.push_back(pointer);
+  }
+  if (pointers.size() != kModelBufferCount) {
     cast.emitError(
         "Triton-to-LiteRT Bridge Input milestone 1 requires the canonical "
         "launch offset to feed exactly three structured pointers");
     return failure();
   }
 
-  return success();
+  return pointers;
 }
 
 LogicalResult validateMilestoneProgram(func::FuncOp function) {
@@ -592,117 +585,123 @@ public:
   }
 
   void runOnOperation() final {
-    SmallVector<func::FuncOp> functions(getOperation().getOps<func::FuncOp>());
-    if (functions.size() != 1 || !hasStaticUnitLaunch(getOperation())) {
-      Operation *diagnosticAnchor = functions.empty()
-                                        ? getOperation().getOperation()
-                                        : functions.front().getOperation();
-      diagnosticAnchor->emitError(
-          "Triton-to-LiteRT Bridge Input milestone 1 requires a static "
-          "launch grid of (1, 1, 1)");
-      signalPassFailure();
-      return;
-    }
-
-    if (!hasMilestoneModelABI(getOperation())) {
-      functions.front()->emitError(
-          "Triton-to-LiteRT Bridge Input model ABI cannot be functionalized: "
-          "expected distinct buffer roles [input, input, output]");
-      signalPassFailure();
-      return;
-    }
-
-    if (failed(validateOperationAllowlist(getOperation()))) {
-      signalPassFailure();
-      return;
-    }
-
-    WalkResult result = getOperation().walk([&](Operation *operation) {
-      if (auto pointer = dyn_cast<tts::MakeTensorPtrOp>(operation)) {
-        if (failed(validateEntryBlockPlacement(pointer, "structured memory")) ||
-            failed(validateStructuredPointer(pointer)))
-          return WalkResult::interrupt();
-      } else if (auto load = dyn_cast<tts::LoadOp>(operation)) {
-        if (failed(validateEntryBlockPlacement(load, "structured memory")) ||
-            failed(validateStructuredLoad(load)))
-          return WalkResult::interrupt();
-      } else if (auto store = dyn_cast<tts::StoreOp>(operation)) {
-        if (failed(validateEntryBlockPlacement(store, "structured memory")) ||
-            failed(validateStructuredStore(store)))
-          return WalkResult::interrupt();
-      } else if (auto empty = dyn_cast<tensor::EmptyOp>(operation)) {
-        if (failed(validateEntryBlockPlacement(empty, "tensor scaffolding")) ||
-            failed(validateTensorEmpty(empty)))
-          return WalkResult::interrupt();
-      } else if (auto generic = dyn_cast<linalg::GenericOp>(operation)) {
-        if (failed(
-                validateEntryBlockPlacement(generic, "candidate computation")))
-          return WalkResult::interrupt();
-      } else if (auto add = dyn_cast<arith::AddFOp>(operation)) {
-        if (!add->getParentOfType<linalg::GenericOp>() ||
-            !add.getType().isF32()) {
-          add.emitError("Triton-to-LiteRT Bridge Input only permits scalar f32 "
-                        "arith.addf inside the candidate linalg.generic");
-          return WalkResult::interrupt();
-        }
-      } else if (auto cast = dyn_cast<arith::IndexCastOp>(operation)) {
-        if (failed(validateEntryBlockPlacement(cast, "launch arithmetic")))
-          return WalkResult::interrupt();
-        if (!cast.getIn().getType().isInteger(32) ||
-            !cast.getOut().getType().isIndex()) {
-          cast.emitError("Triton-to-LiteRT semantic narrowing is unsupported "
-                         "at Bridge Input ('arith.index_cast')");
-          return WalkResult::interrupt();
-        }
-      } else if (isa<arith::ConstantOp, arith::MulIOp>(operation)) {
-        if (failed(validateEntryBlockPlacement(operation, "launch arithmetic")))
-          return WalkResult::interrupt();
-      }
-
-      auto rejectIllegalType = [&](std::optional<Type> illegalType) {
-        if (!illegalType)
-          return false;
-        operation->emitError()
-            << "Triton-to-LiteRT Bridge Input contains categorically illegal "
-               "type "
-            << *illegalType;
-        return true;
-      };
-
-      for (Type type : operation->getOperandTypes()) {
-        if (rejectIllegalType(findIllegalType(type)))
-          return WalkResult::interrupt();
-      }
-      for (Type type : operation->getResultTypes()) {
-        if (rejectIllegalType(findIllegalType(type)))
-          return WalkResult::interrupt();
-      }
-      for (NamedAttribute attribute : operation->getAttrs()) {
-        if (rejectIllegalType(findIllegalType(attribute.getValue())))
-          return WalkResult::interrupt();
-      }
-      for (Region &region : operation->getRegions()) {
-        for (Block &block : region) {
-          for (BlockArgument argument : block.getArguments()) {
-            if (rejectIllegalType(findIllegalType(argument.getType())))
-              return WalkResult::interrupt();
-          }
-        }
-      }
-
-      return WalkResult::advance();
-    });
-
-    if (result.wasInterrupted())
-      signalPassFailure();
-    else if (failed(validateFunctionSignature(functions.front())) ||
-             failed(validateMilestoneProgram(functions.front())) ||
-             failed(validateCanonicalLaunchArithmetic(functions.front())))
+    if (failed(verifyMilestoneBridgeInput(getOperation())))
       signalPassFailure();
   }
 };
 
 } // namespace
+
+LogicalResult verifyMilestoneBridgeInput(ModuleOp module) {
+  SmallVector<func::FuncOp> functions(module.getOps<func::FuncOp>());
+  if (functions.size() != 1 || !hasStaticUnitLaunch(module)) {
+    Operation *diagnosticAnchor = functions.empty()
+                                      ? module.getOperation()
+                                      : functions.front().getOperation();
+    diagnosticAnchor->emitError(
+        "Triton-to-LiteRT Bridge Input milestone 1 requires a static "
+        "launch grid of (1, 1, 1)");
+    return failure();
+  }
+
+  if (!hasMilestoneModelABI(module)) {
+    functions.front()->emitError(
+        "Triton-to-LiteRT Bridge Input model ABI cannot be functionalized: "
+        "expected distinct buffer roles [input, input, output]");
+    return failure();
+  }
+
+  if (failed(validateOperationAllowlist(module)))
+    return failure();
+
+  WalkResult result = module.walk([&](Operation *operation) {
+    if (auto pointer = dyn_cast<tts::MakeTensorPtrOp>(operation)) {
+      if (failed(validateEntryBlockPlacement(pointer, "structured memory")) ||
+          failed(validateStructuredPointer(pointer)))
+        return WalkResult::interrupt();
+    } else if (auto load = dyn_cast<tts::LoadOp>(operation)) {
+      if (failed(validateEntryBlockPlacement(load, "structured memory")) ||
+          failed(validateStructuredLoad(load)))
+        return WalkResult::interrupt();
+    } else if (auto store = dyn_cast<tts::StoreOp>(operation)) {
+      if (failed(validateEntryBlockPlacement(store, "structured memory")) ||
+          failed(validateStructuredStore(store)))
+        return WalkResult::interrupt();
+    } else if (auto empty = dyn_cast<tensor::EmptyOp>(operation)) {
+      if (failed(validateEntryBlockPlacement(empty, "tensor scaffolding")) ||
+          failed(validateTensorEmpty(empty)))
+        return WalkResult::interrupt();
+    } else if (auto generic = dyn_cast<linalg::GenericOp>(operation)) {
+      if (failed(validateEntryBlockPlacement(generic, "candidate computation")))
+        return WalkResult::interrupt();
+    } else if (auto add = dyn_cast<arith::AddFOp>(operation)) {
+      if (!add->getParentOfType<linalg::GenericOp>() ||
+          !add.getType().isF32()) {
+        add.emitError("Triton-to-LiteRT Bridge Input only permits scalar f32 "
+                      "arith.addf inside the candidate linalg.generic");
+        return WalkResult::interrupt();
+      }
+    } else if (auto cast = dyn_cast<arith::IndexCastOp>(operation)) {
+      if (failed(validateEntryBlockPlacement(cast, "launch arithmetic")))
+        return WalkResult::interrupt();
+      if (!cast.getIn().getType().isInteger(32) ||
+          !cast.getOut().getType().isIndex()) {
+        cast.emitError("Triton-to-LiteRT semantic narrowing is unsupported at "
+                       "Bridge Input ('arith.index_cast')");
+        return WalkResult::interrupt();
+      }
+    } else if (isa<arith::ConstantOp, arith::MulIOp>(operation)) {
+      if (failed(validateEntryBlockPlacement(operation, "launch arithmetic")))
+        return WalkResult::interrupt();
+    }
+
+    auto rejectIllegalType = [&](std::optional<Type> illegalType) {
+      if (!illegalType)
+        return false;
+      operation->emitError()
+          << "Triton-to-LiteRT Bridge Input contains categorically illegal "
+             "type "
+          << *illegalType;
+      return true;
+    };
+
+    for (Type type : operation->getOperandTypes()) {
+      if (rejectIllegalType(findIllegalType(type)))
+        return WalkResult::interrupt();
+    }
+    for (Type type : operation->getResultTypes()) {
+      if (rejectIllegalType(findIllegalType(type)))
+        return WalkResult::interrupt();
+    }
+    for (NamedAttribute attribute : operation->getAttrs()) {
+      if (rejectIllegalType(findIllegalType(attribute.getValue())))
+        return WalkResult::interrupt();
+    }
+    for (Region &region : operation->getRegions()) {
+      for (Block &block : region) {
+        for (BlockArgument argument : block.getArguments()) {
+          if (rejectIllegalType(findIllegalType(argument.getType())))
+            return WalkResult::interrupt();
+        }
+      }
+    }
+
+    return WalkResult::advance();
+  });
+
+  if (result.wasInterrupted())
+    return failure();
+  if (failed(validateFunctionSignature(functions.front())) ||
+      failed(validateMilestoneProgram(functions.front())) ||
+      failed(analyzeMilestoneLaunchContractImpl(functions.front())))
+    return failure();
+  return success();
+}
+
+FailureOr<SmallVector<tts::MakeTensorPtrOp>>
+analyzeMilestoneLaunchContract(func::FuncOp function) {
+  return analyzeMilestoneLaunchContractImpl(function);
+}
 
 std::unique_ptr<Pass> createVerifyBridgeInputPass() {
   return std::make_unique<VerifyBridgeInputPass>();
@@ -710,6 +709,7 @@ std::unique_ptr<Pass> createVerifyBridgeInputPass() {
 
 void registerTritonToLiteRTBridgePasses() {
   static PassRegistration<VerifyBridgeInputPass> registration;
+  registerNormalizeLaunchMetadataPass();
 }
 
 } // namespace mlir::triton_to_litert
