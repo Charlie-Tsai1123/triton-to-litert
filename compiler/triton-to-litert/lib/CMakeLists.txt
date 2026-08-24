@@ -1,5 +1,6 @@
 add_triton_object(TritonToLiteRTBridge
   Pipelines.cpp
+  ClassifyVectorAddLinalg.cpp
   FunctionalizeStructuredInputs.cpp
   NormalizeLaunchMetadata.cpp
   StructuredInput.cpp

@@ -42,6 +42,8 @@ inline constexpr unsigned kMilestoneArgumentCount =
 enum class MilestoneOperationStage {
   BridgeInput,
   NormalizedBridgePreparation,
+  FunctionalizedBridgePreparation,
+  ClassifiedBridgePreparation,
 };
 
 LogicalResult verifyMilestoneBridgeInput(ModuleOp module);

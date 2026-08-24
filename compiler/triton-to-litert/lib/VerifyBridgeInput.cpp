@@ -44,14 +44,37 @@ bool hasStaticUnitLaunch(ModuleOp module) {
 
 bool isAllowedMilestoneOperation(StringRef operationName,
                                  MilestoneOperationStage stage) {
+  bool isBridgeInput = stage == MilestoneOperationStage::BridgeInput;
+  bool isClassified =
+      stage == MilestoneOperationStage::ClassifiedBridgePreparation;
+  bool hasStructuredInputLoads =
+      isBridgeInput ||
+      stage == MilestoneOperationStage::NormalizedBridgePreparation;
   return llvm::StringSwitch<bool>(operationName)
       .Cases({"builtin.module", "func.func", "func.return"}, true)
       .Case("arith.addf", true)
       .Cases({"arith.constant", "arith.muli", "arith.index_cast"},
-             stage == MilestoneOperationStage::BridgeInput)
-      .Cases({"tensor.empty", "linalg.generic", "linalg.yield"}, true)
-      .Cases({"tts.make_tptr", "tts.load", "tts.store"}, true)
+             isBridgeInput)
+      .Cases({"tensor.empty", "linalg.yield", "tts.make_tptr", "tts.store"},
+             true)
+      .Case("linalg.generic", !isClassified)
+      .Case("linalg.elementwise", isClassified)
+      .Case("tts.load", hasStructuredInputLoads)
       .Default(false);
+}
+
+StringRef getOperationStageName(MilestoneOperationStage stage) {
+  switch (stage) {
+  case MilestoneOperationStage::BridgeInput:
+    return "Bridge Input";
+  case MilestoneOperationStage::NormalizedBridgePreparation:
+    return "normalized bridge preparation";
+  case MilestoneOperationStage::FunctionalizedBridgePreparation:
+    return "functionalized bridge preparation";
+  case MilestoneOperationStage::ClassifiedBridgePreparation:
+    return "classified bridge preparation";
+  }
+  llvm_unreachable("unknown milestone operation stage");
 }
 
 bool isUnstructuredMemoryOperation(StringRef operationName) {
@@ -62,18 +85,30 @@ bool isUnstructuredMemoryOperation(StringRef operationName) {
       .Default(false);
 }
 
+bool hasAllowedMilestonePlacement(Operation *operation,
+                                  MilestoneOperationStage stage) {
+  StringRef name = operation->getName().getStringRef();
+  if (name != "arith.addf" && name != "linalg.yield")
+    return true;
+
+  Operation *parent = operation->getParentOp();
+  if (stage == MilestoneOperationStage::ClassifiedBridgePreparation)
+    return isa_and_nonnull<linalg::ElementwiseOp>(parent);
+  return isa_and_nonnull<linalg::GenericOp>(parent);
+}
+
 LogicalResult validateOperationAllowlistImpl(ModuleOp module,
                                              MilestoneOperationStage stage) {
   WalkResult result = module.walk([&](Operation *operation) {
     StringRef operationName = operation->getName().getStringRef();
-    if (isAllowedMilestoneOperation(operationName, stage))
+    if (isAllowedMilestoneOperation(operationName, stage) &&
+        hasAllowedMilestonePlacement(operation, stage))
       return WalkResult::advance();
 
-    if (stage == MilestoneOperationStage::NormalizedBridgePreparation) {
+    if (stage != MilestoneOperationStage::BridgeInput) {
       operation->emitError()
-          << "Triton-to-LiteRT normalized bridge preparation does not support "
-             "operation '"
-          << operationName << "'";
+          << "Triton-to-LiteRT " << getOperationStageName(stage)
+          << " does not support operation '" << operationName << "'";
       return WalkResult::interrupt();
     }
 
@@ -631,6 +666,7 @@ void registerTritonToLiteRTBridgePasses() {
   registerNormalizeLaunchMetadataPass();
   registerExtractStructuredInputSemanticsPass();
   registerFunctionalizeStructuredInputsPass();
+  registerClassifyVectorAddLinalgPass();
   registerVerifyBridgeIRV1Pass();
 }
 

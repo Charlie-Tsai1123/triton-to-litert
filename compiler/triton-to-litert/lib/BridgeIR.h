@@ -14,6 +14,7 @@
 
 namespace mlir {
 class ModuleOp;
+class Type;
 
 namespace triton_to_litert {
 
@@ -24,6 +25,7 @@ inline constexpr llvm::StringLiteral kBridgeEntryPointAttrName =
 inline constexpr int64_t kBridgeIRVersion = 1;
 inline constexpr int64_t kBridgeIRV1Extent = 1024;
 
+bool isBridgeIRV1Tensor(Type type);
 LogicalResult verifyBridgeIRV1(ModuleOp module);
 
 } // namespace triton_to_litert

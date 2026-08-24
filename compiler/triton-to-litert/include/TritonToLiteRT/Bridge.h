@@ -20,6 +20,7 @@ std::unique_ptr<Pass> createVerifyBridgeInputPass();
 std::unique_ptr<Pass> createNormalizeLaunchMetadataPass();
 std::unique_ptr<Pass> createExtractStructuredInputSemanticsPass();
 std::unique_ptr<Pass> createFunctionalizeStructuredInputsPass();
+std::unique_ptr<Pass> createClassifyVectorAddLinalgPass();
 std::unique_ptr<Pass> createVerifyBridgeIRV1Pass();
 
 void buildTritonToLiteRTBridgePipeline(OpPassManager &passManager);
@@ -28,6 +29,7 @@ void registerTritonToLiteRTBridgePasses();
 void registerNormalizeLaunchMetadataPass();
 void registerExtractStructuredInputSemanticsPass();
 void registerFunctionalizeStructuredInputsPass();
+void registerClassifyVectorAddLinalgPass();
 void registerVerifyBridgeIRV1Pass();
 void registerTritonToLiteRTBridgePipeline();
 

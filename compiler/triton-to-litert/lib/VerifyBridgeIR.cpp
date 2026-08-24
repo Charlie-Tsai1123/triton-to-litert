@@ -19,7 +19,6 @@
 #include "llvm/ADT/STLExtras.h"
 
 namespace mlir::triton_to_litert {
-namespace {
 
 bool isBridgeIRV1Tensor(Type type) {
   auto tensor = dyn_cast<RankedTensorType>(type);
@@ -27,6 +26,8 @@ bool isBridgeIRV1Tensor(Type type) {
          tensor.getShape() == ArrayRef<int64_t>{kBridgeIRV1Extent} &&
          tensor.getElementType().isF32() && !tensor.getEncoding();
 }
+
+namespace {
 
 LogicalResult emitIllegalBridgeConstruct(Operation *operation,
                                          const Twine &construct,

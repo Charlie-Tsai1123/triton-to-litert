@@ -2,7 +2,7 @@
 // RUN: FileCheck %s --input-file=%t.bridge --check-prefix=BRIDGE
 // RUN: FileCheck %s --input-file=%t.bridge --check-prefix=MAKERS
 // RUN: FileCheck %s --input-file=%t.bridge --check-prefix=LOADS
-// RUN: FileCheck %s --input-file=%t.bridge --check-prefix=GENERICS
+// RUN: FileCheck %s --input-file=%t.bridge --check-prefix=CATEGORY
 // RUN: FileCheck %s --input-file=%t.bridge --check-prefix=STORES
 // RUN: triton-to-litert-opt --pass-pipeline='builtin.module(triton-to-litert-bridge)' --dump-pass-pipeline %s 2>&1 | FileCheck %s --check-prefix=PIPELINE
 // RUN: triton-to-litert-opt --pass-pipeline='builtin.module(triton-to-structured,cse,canonicalize,triton-to-unstructured,triton-arith-to-linalg{tensor-ptr-to-linalg=false pids-to-func-args=true})' %s > %t.prefix
@@ -49,7 +49,7 @@ module attributes {
   }
 }
 
-// PIPELINE: Pass Manager with 9 passes:
+// PIPELINE: Pass Manager with 10 passes:
 // PIPELINE: builtin.module(
 // PIPELINE-NEXT:   triton-to-structured
 // PIPELINE-NEXT:   cse
@@ -62,6 +62,7 @@ module attributes {
 // PIPELINE-NEXT:   normalize-triton-to-litert-launch-metadata
 // PIPELINE-NEXT:   extract-triton-to-litert-structured-input-semantics
 // PIPELINE-NEXT:   functionalize-triton-to-litert-structured-inputs
+// PIPELINE-NEXT:   classify-triton-to-litert-vector-add-linalg
 
 // BRIDGE-NOT: triton_to_litert.launch_grid
 // BRIDGE-LABEL: func.func @vector_add(
@@ -104,8 +105,9 @@ module attributes {
 // MAKERS-COUNT-1: tts.make_tptr
 // MAKERS-NOT: tts.make_tptr
 // LOADS-NOT: "tts.load"
-// GENERICS-COUNT-1: linalg.generic
-// GENERICS-NOT: linalg.generic
+// CATEGORY-COUNT-1: tensor.empty
+// CATEGORY-COUNT-1: linalg.elementwise kind=#linalg.elementwise_kind<add>
+// CATEGORY-NOT: linalg.generic
 // STORES-COUNT-1: "tts.store"
 // STORES-NOT: "tts.store"
 
