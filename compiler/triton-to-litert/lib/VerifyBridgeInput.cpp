@@ -667,6 +667,7 @@ void registerTritonToLiteRTBridgePasses() {
   registerExtractStructuredInputSemanticsPass();
   registerFunctionalizeStructuredInputsPass();
   registerClassifyVectorAddLinalgPass();
+  registerFunctionalizeStructuredOutputPass();
   registerVerifyBridgeIRV1Pass();
 }
 

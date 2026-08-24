@@ -7,6 +7,7 @@
 #ifndef TRITON_TO_LITERT_LIB_BRIDGE_IR_H
 #define TRITON_TO_LITERT_LIB_BRIDGE_IR_H
 
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 
@@ -26,6 +27,7 @@ inline constexpr int64_t kBridgeIRVersion = 1;
 inline constexpr int64_t kBridgeIRV1Extent = 1024;
 
 bool isBridgeIRV1Tensor(Type type);
+LogicalResult verifyBridgeIRV1ClassifiedAdd(func::FuncOp function);
 LogicalResult verifyBridgeIRV1(ModuleOp module);
 
 } // namespace triton_to_litert

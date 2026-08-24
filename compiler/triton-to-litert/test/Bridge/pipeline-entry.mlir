@@ -49,7 +49,7 @@ module attributes {
   }
 }
 
-// PIPELINE: Pass Manager with 10 passes:
+// PIPELINE: Pass Manager with 12 passes:
 // PIPELINE: builtin.module(
 // PIPELINE-NEXT:   triton-to-structured
 // PIPELINE-NEXT:   cse
@@ -63,17 +63,19 @@ module attributes {
 // PIPELINE-NEXT:   extract-triton-to-litert-structured-input-semantics
 // PIPELINE-NEXT:   functionalize-triton-to-litert-structured-inputs
 // PIPELINE-NEXT:   classify-triton-to-litert-vector-add-linalg
+// PIPELINE-NEXT:   functionalize-triton-to-litert-structured-output
+// PIPELINE-NEXT:   verify-triton-to-litert-bridge-ir-v1
 
 // BRIDGE-NOT: triton_to_litert.launch_grid
+// BRIDGE: triton_to_litert.bridge_version = 1 : i32
+// BRIDGE: triton_to_litert.entry_point = "vector_add"
 // BRIDGE-LABEL: func.func @vector_add(
 // BRIDGE-SAME: tensor<1024xf32>
 // BRIDGE-SAME: tensor<1024xf32>
-// BRIDGE-SAME: !tt.ptr<f32>
-// BRIDGE-SAME: ) {
+// BRIDGE-SAME: ) -> tensor<1024xf32> {
 // BRIDGE-NOT: arith.constant
 // BRIDGE-NOT: arith.muli
 // BRIDGE-NOT: arith.index_cast
-// BRIDGE: offsets: [0]
 // BRIDGE-NOT: "tts.load"
 // BRIDGE-NOT: tt.func
 // BRIDGE-NOT: tt.get_program_id
@@ -86,6 +88,8 @@ module attributes {
 // BRIDGE-NOT: memref
 // BRIDGE-NOT: bufferization
 // BRIDGE-NOT: "tfl.
+// BRIDGE-NOT: !tt.ptr
+// BRIDGE-NOT: tts.
 
 // PREFIX: triton_to_litert.launch_grid = array<i64: 1, 1, 1>
 // PREFIX-LABEL: func.func @vector_add(
@@ -102,13 +106,11 @@ module attributes {
 // PREFIX: arith.index_cast
 // PREFIX: offsets: [
 
-// MAKERS-COUNT-1: tts.make_tptr
 // MAKERS-NOT: tts.make_tptr
 // LOADS-NOT: "tts.load"
 // CATEGORY-COUNT-1: tensor.empty
 // CATEGORY-COUNT-1: linalg.elementwise kind=#linalg.elementwise_kind<add>
 // CATEGORY-NOT: linalg.generic
-// STORES-COUNT-1: "tts.store"
 // STORES-NOT: "tts.store"
 
 // REFERENCE: memref.reinterpret_cast

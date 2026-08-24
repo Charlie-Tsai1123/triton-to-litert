@@ -161,22 +161,10 @@ LogicalResult verifyEntryFunction(func::FuncOp function) {
         "Bridge IR v1 tensor ABI does not permit argument or result "
         "attributes");
 
-  tensor::EmptyOp empty;
-  linalg::ElementwiseOp elementwise;
   func::ReturnOp returnOp;
   for (Operation &operation : function.getBody().front()) {
-    if (auto candidate = dyn_cast<tensor::EmptyOp>(operation)) {
-      if (empty)
-        return emitIllegalBridgeConstruct(
-            candidate, "tensor.empty",
-            "Bridge IR v1 requires exactly one tensor.empty");
-      empty = candidate;
-    } else if (auto candidate = dyn_cast<linalg::ElementwiseOp>(operation)) {
-      if (elementwise)
-        return emitIllegalBridgeConstruct(
-            candidate, "linalg.elementwise",
-            "Bridge IR v1 requires exactly one elementwise add");
-      elementwise = candidate;
+    if (isa<tensor::EmptyOp, linalg::ElementwiseOp>(operation)) {
+      continue;
     } else if (auto candidate = dyn_cast<func::ReturnOp>(operation)) {
       if (returnOp)
         return emitIllegalBridgeConstruct(
@@ -190,22 +178,10 @@ LogicalResult verifyEntryFunction(func::FuncOp function) {
     }
   }
 
-  if (!empty || !isBridgeIRV1Tensor(empty.getType()) ||
-      !empty.getDynamicSizes().empty() ||
-      !empty->getDiscardableAttrDictionary().empty())
-    return emitIllegalBridgeConstruct(
-        function, "tensor.empty",
-        "expected one static tensor.empty of tensor<1024xf32>");
-  if (!elementwise)
-    return emitIllegalBridgeConstruct(
-        function, "linalg.elementwise",
-        "expected one milestone-1 elementwise add");
-  if (!elementwise->getDiscardableAttrDictionary().empty())
-    return emitIllegalBridgeConstruct(
-        elementwise, "linalg.elementwise attribute",
-        "Bridge IR v1 does not permit unversioned operation attributes");
-  if (failed(verifyElementwiseAdd(elementwise, function, empty)))
+  if (failed(verifyBridgeIRV1ClassifiedAdd(function)))
     return failure();
+  linalg::ElementwiseOp elementwise =
+      *function.getOps<linalg::ElementwiseOp>().begin();
 
   if (!returnOp || returnOp.getNumOperands() != 1 ||
       returnOp.getOperand(0) != elementwise->getResult(0) ||
@@ -243,6 +219,42 @@ LogicalResult verifyBridgeIRV1(ModuleOp module) {
   if (failed(verifyBridgeMetadata(module, entryFunction)))
     return failure();
   return verifyEntryFunction(entryFunction);
+}
+
+LogicalResult verifyBridgeIRV1ClassifiedAdd(func::FuncOp function) {
+  tensor::EmptyOp empty;
+  linalg::ElementwiseOp elementwise;
+  for (Operation &operation : function.getBody().front()) {
+    if (auto candidate = dyn_cast<tensor::EmptyOp>(operation)) {
+      if (empty)
+        return emitIllegalBridgeConstruct(
+            candidate, "tensor.empty",
+            "Bridge IR v1 requires exactly one tensor.empty");
+      empty = candidate;
+    } else if (auto candidate = dyn_cast<linalg::ElementwiseOp>(operation)) {
+      if (elementwise)
+        return emitIllegalBridgeConstruct(
+            candidate, "linalg.elementwise",
+            "Bridge IR v1 requires exactly one elementwise add");
+      elementwise = candidate;
+    }
+  }
+
+  if (!empty || !isBridgeIRV1Tensor(empty.getType()) ||
+      !empty.getDynamicSizes().empty() ||
+      !empty->getDiscardableAttrDictionary().empty())
+    return emitIllegalBridgeConstruct(
+        function, "tensor.empty",
+        "expected one static tensor.empty of tensor<1024xf32>");
+  if (!elementwise)
+    return emitIllegalBridgeConstruct(
+        function, "linalg.elementwise",
+        "expected one milestone-1 elementwise add");
+  if (!elementwise->getDiscardableAttrDictionary().empty())
+    return emitIllegalBridgeConstruct(
+        elementwise, "linalg.elementwise attribute",
+        "Bridge IR v1 does not permit unversioned operation attributes");
+  return verifyElementwiseAdd(elementwise, function, empty);
 }
 
 std::unique_ptr<Pass> createVerifyBridgeIRV1Pass() {

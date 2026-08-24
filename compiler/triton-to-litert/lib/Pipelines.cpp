@@ -32,12 +32,14 @@ void buildTritonToLiteRTBridgePipeline(OpPassManager &passManager) {
   passManager.addPass(createExtractStructuredInputSemanticsPass());
   passManager.addPass(createFunctionalizeStructuredInputsPass());
   passManager.addPass(createClassifyVectorAddLinalgPass());
+  passManager.addPass(createFunctionalizeStructuredOutputPass());
+  passManager.addPass(createVerifyBridgeIRV1Pass());
 }
 
 void registerTritonToLiteRTBridgePipeline() {
   static PassPipelineRegistration<> registration(
       "triton-to-litert-bridge",
-      "Recover Triton semantics and classify milestone-1 vector addition",
+      "Recover Triton semantics and emit milestone-1 Bridge IR v1",
       buildTritonToLiteRTBridgePipeline);
 }
 
