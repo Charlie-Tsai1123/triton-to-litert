@@ -9,7 +9,11 @@
 // RUN: diff %t.prefix %t.bridge
 // RUN: triton-shared-opt --triton-to-linalg-experimental %s | FileCheck %s --check-prefix=REFERENCE
 
-module {
+module attributes {
+  triton_to_litert.buffer_roles = ["input", "input", "output"],
+  triton_to_litert.buffers_distinct,
+  triton_to_litert.launch_grid = array<i64: 1, 1, 1>
+} {
   tt.func public @vector_add(
       %a: !tt.ptr<f32>,
       %b: !tt.ptr<f32>,

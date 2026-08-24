@@ -1,6 +1,10 @@
 // RUN: not triton-to-litert-opt --pass-pipeline='builtin.module(triton-to-litert-bridge)' %s 2>&1 | FileCheck %s
 
-module {
+module attributes {
+  triton_to_litert.buffer_roles = ["input", "input", "output"],
+  triton_to_litert.buffers_distinct,
+  triton_to_litert.launch_grid = array<i64: 1, 1, 1>
+} {
   func.func @categorically_illegal(%buffer: memref<4xf32>) {
     return
   }
