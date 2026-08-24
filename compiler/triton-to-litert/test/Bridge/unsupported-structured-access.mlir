@@ -32,6 +32,50 @@ module attributes {
   triton_to_litert.buffers_distinct,
   triton_to_litert.launch_grid = array<i64: 1, 1, 1>
 } {
+  func.func @zero_stride(
+      %a: !tt.ptr<f32>, %b: !tt.ptr<f32>, %out: !tt.ptr<f32>,
+      %num_x: i32, %num_y: i32, %num_z: i32,
+      %pid_x: i32, %pid_y: i32, %pid_z: i32) {
+    %c1024 = arith.constant 1024 : i32
+    %tile_i32 = arith.muli %pid_x, %c1024 : i32
+    %tile = arith.index_cast %tile_i32 : i32 to index
+    // expected-error @+1 {{unsupported structured pointer layout: stride must be static positive unit stride}}
+    %unused = tts.make_tptr %a to sizes: [1024], strides: [0],
+        offsets: [%tile], shape: [0], order: []
+        : <f32> to tensor<1024x!tt.ptr<f32>>
+    return
+  }
+}
+
+// -----
+
+module attributes {
+  triton_to_litert.buffer_roles = ["input", "input", "output"],
+  triton_to_litert.buffers_distinct,
+  triton_to_litert.launch_grid = array<i64: 1, 1, 1>
+} {
+  func.func @negative_stride(
+      %a: !tt.ptr<f32>, %b: !tt.ptr<f32>, %out: !tt.ptr<f32>,
+      %num_x: i32, %num_y: i32, %num_z: i32,
+      %pid_x: i32, %pid_y: i32, %pid_z: i32) {
+    %c1024 = arith.constant 1024 : i32
+    %tile_i32 = arith.muli %pid_x, %c1024 : i32
+    %tile = arith.index_cast %tile_i32 : i32 to index
+    // expected-error @+1 {{unsupported structured pointer layout: stride must be static positive unit stride}}
+    %unused = tts.make_tptr %a to sizes: [1024], strides: [-1],
+        offsets: [%tile], shape: [0], order: []
+        : <f32> to tensor<1024x!tt.ptr<f32>>
+    return
+  }
+}
+
+// -----
+
+module attributes {
+  triton_to_litert.buffer_roles = ["input", "input", "output"],
+  triton_to_litert.buffers_distinct,
+  triton_to_litert.launch_grid = array<i64: 1, 1, 1>
+} {
   func.func @masked_store(
       %a: !tt.ptr<f32>, %b: !tt.ptr<f32>, %out: !tt.ptr<f32>,
       %num_x: i32, %num_y: i32, %num_z: i32,

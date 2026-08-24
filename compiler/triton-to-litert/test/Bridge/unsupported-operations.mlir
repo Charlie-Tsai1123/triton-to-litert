@@ -52,9 +52,34 @@ module attributes {
       %a: !tt.ptr<f32>, %b: !tt.ptr<f32>, %out: !tt.ptr<f32>,
       %num_x: i32, %num_y: i32, %num_z: i32,
       %pid_x: i32, %pid_y: i32, %pid_z: i32) {
-    %wide = arith.constant 0 : i64
+    %wide = arith.constant 4294967296 : i64
     // expected-error @+1 {{semantic narrowing is unsupported at Bridge Input ('arith.trunci')}}
-    %unused = arith.trunci %wide : i64 to i32
+    %narrow = arith.trunci %wide : i64 to i32
+    %offset = arith.index_cast %narrow : i32 to index
+    %unused = tts.make_tptr %a to sizes: [1024], strides: [1],
+        offsets: [%offset], shape: [0], order: []
+        : <f32> to tensor<1024x!tt.ptr<f32>>
+    return
+  }
+}
+
+// -----
+
+module attributes {
+  triton_to_litert.buffer_roles = ["input", "input", "output"],
+  triton_to_litert.buffers_distinct,
+  triton_to_litert.launch_grid = array<i64: 1, 1, 1>
+} {
+  func.func @unproved_unsigned_index_range(
+      %a: !tt.ptr<f32>, %b: !tt.ptr<f32>, %out: !tt.ptr<f32>,
+      %num_x: i32, %num_y: i32, %num_z: i32,
+      %pid_x: i32, %pid_y: i32, %pid_z: i32) {
+    %wide = arith.constant 4294967296 : i64
+    // expected-error @+1 {{semantic narrowing is unsupported at Bridge Input ('arith.index_castui'): source range cannot be proven representable as index}}
+    %offset = arith.index_castui %wide : i64 to index
+    %unused = tts.make_tptr %a to sizes: [1024], strides: [1],
+        offsets: [%offset], shape: [0], order: []
+        : <f32> to tensor<1024x!tt.ptr<f32>>
     return
   }
 }
@@ -82,6 +107,62 @@ module attributes {
         %product = arith.mulf %in, %in : f32
         linalg.yield %product : f32
     } -> tensor<1024xf32>
+    return
+  }
+}
+
+// -----
+
+module attributes {
+  triton_to_litert.buffer_roles = ["input", "input", "output"],
+  triton_to_litert.buffers_distinct,
+  triton_to_litert.launch_grid = array<i64: 1, 1, 1>
+} {
+  func.func @residual_triton_load(
+      %a: !tt.ptr<f32>, %b: !tt.ptr<f32>, %out: !tt.ptr<f32>,
+      %num_x: i32, %num_y: i32, %num_z: i32,
+      %pid_x: i32, %pid_y: i32, %pid_z: i32) {
+    // expected-error @+1 {{bridge input contains residual Triton operation 'tt.load'}}
+    %unused = tt.load %a : !tt.ptr<f32>
+    return
+  }
+}
+
+// -----
+
+module attributes {
+  triton_to_litert.buffer_roles = ["input", "input", "output"],
+  triton_to_litert.buffers_distinct,
+  triton_to_litert.launch_grid = array<i64: 1, 1, 1>
+} {
+  func.func @residual_triton_store(
+      %a: !tt.ptr<f32>, %b: !tt.ptr<f32>, %out: !tt.ptr<f32>,
+      %num_x: i32, %num_y: i32, %num_z: i32,
+      %pid_x: i32, %pid_y: i32, %pid_z: i32) {
+    %value = arith.constant 0.0 : f32
+    // expected-error @+1 {{bridge input contains residual Triton operation 'tt.store'}}
+    tt.store %out, %value : !tt.ptr<f32>
+    return
+  }
+}
+
+// -----
+
+module attributes {
+  triton_to_litert.buffer_roles = ["input", "input", "output"],
+  triton_to_litert.buffers_distinct,
+  triton_to_litert.launch_grid = array<i64: 1, 1, 1>
+} {
+  func.func @unstructured_pointer_recovery(
+      %a: !tt.ptr<f32>, %b: !tt.ptr<f32>, %out: !tt.ptr<f32>,
+      %num_x: i32, %num_y: i32, %num_z: i32,
+      %pid_x: i32, %pid_y: i32, %pid_z: i32) {
+    %offsets = arith.constant dense<0> : tensor<1024xi32>
+    // expected-error @+1 {{milestone 1 does not support unstructured memory operation 'tts.make_gather_scatter_tptr'}}
+    %unused = tts.make_gather_scatter_tptr %a to sizes: [1024]
+        gather_scatter_dim: 0 gather_scatter_offset: %offsets,
+        strides: [1], offsets: [0]
+        : tensor<1024xi32> <f32> to tensor<1024x!tt.ptr<f32>>
     return
   }
 }

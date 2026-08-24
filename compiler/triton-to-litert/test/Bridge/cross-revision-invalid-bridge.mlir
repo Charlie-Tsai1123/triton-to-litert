@@ -1,5 +1,7 @@
 // REQUIRES: litert-side-bridge
-// RUN: not linalg-to-tfl-opt --triton-to-litert-bridge-to-tfl --verify-each %s 2>&1 | FileCheck %s
+// RUN: not linalg-to-tfl-opt --triton-to-litert-bridge-to-tfl --verify-each %s > %t.rejected-tfl.mlir 2> %t.error
+// RUN: test ! -s %t.rejected-tfl.mlir
+// RUN: FileCheck %s --input-file=%t.error
 
 module attributes {
   triton_to_litert.bridge_version = 2 : i32,
@@ -16,3 +18,4 @@ module attributes {
 }
 
 // CHECK: error: Triton-to-LiteRT unsupported Bridge IR version: expected i32 version 1
+// CHECK: error: LiteRT-side Bridge IR verification failed

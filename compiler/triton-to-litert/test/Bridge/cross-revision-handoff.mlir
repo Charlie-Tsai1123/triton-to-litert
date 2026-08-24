@@ -13,7 +13,8 @@
 // RUN: not triton-to-litert-opt --pass-pipeline='builtin.module(triton-to-litert-bridge)' --verify-each %S/unstructured-from-ttir.mlir > %t.rejected.mlir 2> %t.producer-error
 // RUN: test ! -s %t.rejected.mlir
 // RUN: FileCheck %s --check-prefix=PRODUCER-ERROR --input-file=%t.producer-error
-// RUN: not linalg-to-tfl-opt --triton-to-litert-bridge-to-tfl --verify-each %s 2> %t.consumer-error
+// RUN: not linalg-to-tfl-opt --triton-to-litert-bridge-to-tfl --verify-each %s > %t.rejected-tfl.mlir 2> %t.consumer-error
+// RUN: test ! -s %t.rejected-tfl.mlir
 // RUN: FileCheck %s --check-prefix=CONSUMER-ERROR --input-file=%t.consumer-error
 
 // BRIDGE: module attributes {
@@ -62,6 +63,7 @@
 
 // CONSUMER-ERROR: error:
 // CONSUMER-ERROR: operation being parsed with an unregistered dialect
+// CONSUMER-ERROR: LiteRT-side Bridge IR verification failed
 
 module attributes {
   triton_to_litert.bridge_version = 1 : i32,

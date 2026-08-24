@@ -1,4 +1,7 @@
 // RUN: linalg-to-tfl-opt --verify-triton-to-litert-tfl-output --verify-diagnostics --split-input-file %s
+// RUN: not linalg-to-tfl-opt --verify-triton-to-litert-tfl-output --split-input-file %s 2>&1 | FileCheck %s --check-prefix=DRIVER
+
+// DRIVER: error: LiteRT-side TFL Output IR verification failed
 
 module {
   func.func @vector_add(%a: tensor<1024xf32>, %b: tensor<1024xf32>)

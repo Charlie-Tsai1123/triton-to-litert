@@ -118,6 +118,11 @@ LogicalResult validateOperationAllowlistImpl(ModuleOp module,
           << "Triton-to-LiteRT semantic narrowing is unsupported at Bridge "
              "Input ('"
           << operationName << "')";
+    } else if (operationName == "arith.index_castui") {
+      operation->emitError()
+          << "Triton-to-LiteRT semantic narrowing is unsupported at Bridge "
+             "Input ('arith.index_castui'): source range cannot be proven "
+             "representable as index";
     } else if (dialectNamespace == "tt") {
       operation->emitError()
           << "Triton-to-LiteRT bridge input contains residual Triton "
