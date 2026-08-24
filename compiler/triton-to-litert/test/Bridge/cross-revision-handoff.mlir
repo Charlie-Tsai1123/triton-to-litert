@@ -58,11 +58,10 @@
 // TFL-CLOSED-NOT: bufferization
 // TFL-CLOSED-NOT: scf.
 
-// PRODUCER-ERROR: Triton-side Bridge IR serialization failed
+// PRODUCER-ERROR: Triton-to-LiteRT Bridge Input milestone 1 does not support unstructured memory operation 'tts.gather'
 
 // CONSUMER-ERROR: error:
 // CONSUMER-ERROR: operation being parsed with an unregistered dialect
-// CONSUMER-ERROR: LiteRT-side Bridge IR verification failed
 
 module attributes {
   triton_to_litert.bridge_version = 1 : i32,

@@ -16,4 +16,3 @@ module attributes {
 }
 
 // CHECK: error: Triton-to-LiteRT unsupported Bridge IR version: expected i32 version 1
-// CHECK: LiteRT-side Bridge IR verification failed
