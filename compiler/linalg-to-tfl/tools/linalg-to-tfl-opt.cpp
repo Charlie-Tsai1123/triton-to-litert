@@ -23,14 +23,16 @@
 
 namespace {
 
-std::atomic<bool> sawPhaseOwnedDiagnostic = false;
+std::atomic<bool> sawContractDiagnostic = false;
 
-void trackPhaseOwnedDiagnostics(mlir::MLIRContext *context,
-                                mlir::func::FuncDialect *) {
+void trackContractDiagnostics(mlir::MLIRContext *context,
+                              mlir::func::FuncDialect *) {
   context->getDiagEngine().registerHandler([](mlir::Diagnostic &diagnostic) {
+    // Bridge and TFL-output verifier errors use this normative prefix. Parser
+    // errors do not, so preserve their detail while adding the phase boundary.
     if (diagnostic.getSeverity() == mlir::DiagnosticSeverity::Error &&
-        llvm::StringRef(diagnostic.str()).contains("Triton-to-LiteRT"))
-      sawPhaseOwnedDiagnostic.store(true, std::memory_order_relaxed);
+        llvm::StringRef(diagnostic.str()).starts_with("Triton-to-LiteRT "))
+      sawContractDiagnostic.store(true, std::memory_order_relaxed);
     return mlir::failure();
   });
 }
@@ -44,13 +46,13 @@ int main(int argc, char **argv) {
   registry.insert<mlir::arith::ArithDialect, mlir::func::FuncDialect,
                   mlir::linalg::LinalgDialect, mlir::tensor::TensorDialect,
                   mlir::TFL::TensorFlowLiteDialect>();
-  registry.addExtension(trackPhaseOwnedDiagnostics);
+  registry.addExtension(trackContractDiagnostics);
 
-  sawPhaseOwnedDiagnostic.store(false, std::memory_order_relaxed);
+  sawContractDiagnostic.store(false, std::memory_order_relaxed);
   mlir::LogicalResult result = mlir::MlirOptMain(
       argc, argv, "Triton-to-LiteRT Bridge IR optimizer\n", registry);
   if (mlir::failed(result) &&
-      !sawPhaseOwnedDiagnostic.load(std::memory_order_relaxed))
+      !sawContractDiagnostic.load(std::memory_order_relaxed))
     llvm::errs() << "error: LiteRT-side Bridge IR verification failed\n";
   return mlir::asMainReturnCode(result);
 }

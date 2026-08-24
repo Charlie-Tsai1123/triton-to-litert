@@ -61,6 +61,107 @@ module attributes {
   triton_to_litert.buffers_distinct,
   triton_to_litert.launch_grid = array<i64: 1, 1, 1>
 } {
+  func.func @residual_triton_atomic_poll(%ptr: !tt.ptr<i32>, %expected: i32) {
+    // expected-error @+1 {{bridge input contains residual Triton operation 'tt.atomic_poll'}}
+    %unused = tt.atomic_poll acquire, gpu, %ptr, %expected
+        : !tt.ptr<i32>, i32 -> i1
+    return
+  }
+}
+
+// -----
+
+module attributes {
+  triton_to_litert.buffer_roles = ["input", "input", "output"],
+  triton_to_litert.buffers_distinct,
+  triton_to_litert.launch_grid = array<i64: 1, 1, 1>
+} {
+  func.func @residual_descriptor_load(%desc: !tt.tensordesc<1024xf32>) {
+    %zero = arith.constant 0 : i32
+    // expected-error @+1 {{bridge input contains residual Triton operation 'tt.descriptor_load'}}
+    %unused = tt.descriptor_load %desc[%zero]
+        : !tt.tensordesc<1024xf32> -> tensor<1024xf32>
+    return
+  }
+}
+
+// -----
+
+module attributes {
+  triton_to_litert.buffer_roles = ["input", "input", "output"],
+  triton_to_litert.buffers_distinct,
+  triton_to_litert.launch_grid = array<i64: 1, 1, 1>
+} {
+  func.func @residual_descriptor_store(
+      %desc: !tt.tensordesc<1024xf32>, %value: tensor<1024xf32>) {
+    %zero = arith.constant 0 : i32
+    // expected-error @+1 {{bridge input contains residual Triton operation 'tt.descriptor_store'}}
+    tt.descriptor_store %desc[%zero], %value
+        : !tt.tensordesc<1024xf32>, tensor<1024xf32>
+    return
+  }
+}
+
+// -----
+
+module attributes {
+  triton_to_litert.buffer_roles = ["input", "input", "output"],
+  triton_to_litert.buffers_distinct,
+  triton_to_litert.launch_grid = array<i64: 1, 1, 1>
+} {
+  func.func @residual_descriptor_reduce(
+      %desc: !tt.tensordesc<1024xf32>, %value: tensor<1024xf32>) {
+    %zero = arith.constant 0 : i32
+    // expected-error @+1 {{bridge input contains residual Triton operation 'tt.descriptor_reduce'}}
+    tt.descriptor_reduce add, %desc[%zero], %value
+        : !tt.tensordesc<1024xf32>, tensor<1024xf32>
+    return
+  }
+}
+
+// -----
+
+module attributes {
+  triton_to_litert.buffer_roles = ["input", "input", "output"],
+  triton_to_litert.buffers_distinct,
+  triton_to_litert.launch_grid = array<i64: 1, 1, 1>
+} {
+  func.func @residual_descriptor_gather(
+      %desc: !tt.tensordesc<1x128xbf16>, %indices: tensor<32xi32>,
+      %offset: i32) {
+    // expected-error @+1 {{bridge input contains residual Triton operation 'tt.descriptor_gather'}}
+    %unused = tt.descriptor_gather %desc[%indices, %offset]
+        : (!tt.tensordesc<1x128xbf16>, tensor<32xi32>, i32)
+        -> tensor<32x128xbf16>
+    return
+  }
+}
+
+// -----
+
+module attributes {
+  triton_to_litert.buffer_roles = ["input", "input", "output"],
+  triton_to_litert.buffers_distinct,
+  triton_to_litert.launch_grid = array<i64: 1, 1, 1>
+} {
+  func.func @residual_descriptor_scatter(
+      %desc: !tt.tensordesc<1x128xbf16>, %indices: tensor<32xi32>,
+      %offset: i32, %value: tensor<32x128xbf16>) {
+    // expected-error @+1 {{bridge input contains residual Triton operation 'tt.descriptor_scatter'}}
+    tt.descriptor_scatter %desc[%indices, %offset], %value
+        : !tt.tensordesc<1x128xbf16>, tensor<32xi32>, i32,
+          tensor<32x128xbf16>
+    return
+  }
+}
+
+// -----
+
+module attributes {
+  triton_to_litert.buffer_roles = ["input", "input", "output"],
+  triton_to_litert.buffers_distinct,
+  triton_to_litert.launch_grid = array<i64: 1, 1, 1>
+} {
   func.func @unsupported_tts(
       %a: !tt.ptr<f32>, %b: !tt.ptr<f32>, %out: !tt.ptr<f32>,
       %num_x: i32, %num_y: i32, %num_z: i32,
