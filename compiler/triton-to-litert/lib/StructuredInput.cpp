@@ -354,6 +354,22 @@ analyzeMilestoneStructuredInputs(ModuleOp module) {
     return emitStructuredInputError(
         function, "expected exactly two structured input loads");
 
+  std::array<tts::MakeTensorPtrOp, kInputBufferCount> referencedInputs;
+  for (tts::LoadOp load : loads) {
+    auto pointer = load.getPtr().getDefiningOp<tts::MakeTensorPtrOp>();
+    auto base =
+        pointer ? dyn_cast<BlockArgument>(pointer.getBase()) : BlockArgument();
+    if (!base || base.getOwner() != &function.getBody().front() ||
+        base.getArgNumber() >= kInputBufferCount)
+      continue;
+    unsigned abiArgumentIndex = base.getArgNumber();
+    if (referencedInputs[abiArgumentIndex] &&
+        referencedInputs[abiArgumentIndex] != pointer)
+      return emitStructuredInputError(
+          load, "each declared input buffer must have exactly one load");
+    referencedInputs[abiArgumentIndex] = pointer;
+  }
+
   std::array<bool, kInputBufferCount> seenInputs = {false, false};
   SmallVector<StructuredInputSemantics, 2> inputs;
   inputs.reserve(kInputBufferCount);

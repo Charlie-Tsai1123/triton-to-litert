@@ -630,6 +630,8 @@ void registerTritonToLiteRTBridgePasses() {
   static PassRegistration<VerifyBridgeInputPass> registration;
   registerNormalizeLaunchMetadataPass();
   registerExtractStructuredInputSemanticsPass();
+  registerFunctionalizeStructuredInputsPass();
+  registerVerifyBridgeIRV1Pass();
 }
 
 } // namespace mlir::triton_to_litert

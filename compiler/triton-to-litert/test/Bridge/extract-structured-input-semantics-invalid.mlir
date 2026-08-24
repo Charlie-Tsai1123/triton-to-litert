@@ -1,4 +1,5 @@
 // RUN: triton-to-litert-opt --extract-triton-to-litert-structured-input-semantics --verify-each --verify-diagnostics --split-input-file %s
+// RUN: triton-to-litert-opt --functionalize-triton-to-litert-structured-inputs --verify-each --verify-diagnostics --split-input-file %s
 
 module attributes {
   triton_to_litert.buffer_roles = ["input", "input", "output"],
@@ -18,6 +19,53 @@ module attributes {
         shape: [0], order: []
         : <f32> to tensor<1024x!tt.ptr<f32>>
     %b_value = "tts.load"(%b_ptr)
+        <{operandSegmentSizes = array<i32: 1, 0, 0>,
+          static_mask_dims = array<i64>}>
+        : (tensor<1024x!tt.ptr<f32>>) -> tensor<1024xf32>
+    return
+  }
+}
+
+// -----
+
+module attributes {
+  triton_to_litert.buffer_roles = ["input", "input", "output"],
+  triton_to_litert.buffers_distinct
+} {
+  // expected-error @+1 {{expected exactly two structured input loads}}
+  func.func @missing_input_descriptor(%a: !tt.ptr<f32>, %b: !tt.ptr<f32>,
+                                      %out: !tt.ptr<f32>) {
+    %a_ptr = tts.make_tptr %a to sizes: [1024], strides: [1], offsets: [0],
+        shape: [0], order: []
+        : <f32> to tensor<1024x!tt.ptr<f32>>
+    %a_value = "tts.load"(%a_ptr)
+        <{operandSegmentSizes = array<i32: 1, 0, 0>,
+          static_mask_dims = array<i64>}>
+        : (tensor<1024x!tt.ptr<f32>>) -> tensor<1024xf32>
+    return
+  }
+}
+
+// -----
+
+module attributes {
+  triton_to_litert.buffer_roles = ["input", "input", "output"],
+  triton_to_litert.buffers_distinct
+} {
+  func.func @duplicate_input_descriptor(%a: !tt.ptr<f32>, %b: !tt.ptr<f32>,
+                                        %out: !tt.ptr<f32>) {
+    %a_ptr_0 = tts.make_tptr %a to sizes: [1024], strides: [1], offsets: [0],
+        shape: [0], order: []
+        : <f32> to tensor<1024x!tt.ptr<f32>>
+    %a_value_0 = "tts.load"(%a_ptr_0)
+        <{operandSegmentSizes = array<i32: 1, 0, 0>,
+          static_mask_dims = array<i64>}>
+        : (tensor<1024x!tt.ptr<f32>>) -> tensor<1024xf32>
+    %a_ptr_1 = tts.make_tptr %a to sizes: [1024], strides: [1], offsets: [0],
+        shape: [0], order: []
+        : <f32> to tensor<1024x!tt.ptr<f32>>
+    // expected-error @+1 {{each declared input buffer must have exactly one load}}
+    %a_value_1 = "tts.load"(%a_ptr_1)
         <{operandSegmentSizes = array<i32: 1, 0, 0>,
           static_mask_dims = array<i64>}>
         : (tensor<1024x!tt.ptr<f32>>) -> tensor<1024xf32>
