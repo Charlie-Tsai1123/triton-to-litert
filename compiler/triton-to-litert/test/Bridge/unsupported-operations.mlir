@@ -22,6 +22,45 @@ module attributes {
   triton_to_litert.buffers_distinct,
   triton_to_litert.launch_grid = array<i64: 1, 1, 1>
 } {
+  func.func @residual_triton_atomic_rmw(
+      %a: !tt.ptr<f32>, %b: !tt.ptr<f32>, %out: !tt.ptr<f32>,
+      %num_x: i32, %num_y: i32, %num_z: i32,
+      %pid_x: i32, %pid_y: i32, %pid_z: i32) {
+    %value = arith.constant 1.0 : f32
+    // expected-error @+1 {{bridge input contains residual Triton operation 'tt.atomic_rmw'}}
+    %unused = tt.atomic_rmw fadd, acq_rel, gpu, %out, %value
+        : (!tt.ptr<f32>, f32) -> f32
+    return
+  }
+}
+
+// -----
+
+module attributes {
+  triton_to_litert.buffer_roles = ["input", "input", "output"],
+  triton_to_litert.buffers_distinct,
+  triton_to_litert.launch_grid = array<i64: 1, 1, 1>
+} {
+  func.func @residual_triton_atomic_cas(
+      %a: !tt.ptr<f32>, %b: !tt.ptr<f32>, %out: !tt.ptr<f32>,
+      %num_x: i32, %num_y: i32, %num_z: i32,
+      %pid_x: i32, %pid_y: i32, %pid_z: i32) {
+    %compare = arith.constant 0.0 : f32
+    %value = arith.constant 1.0 : f32
+    // expected-error @+1 {{bridge input contains residual Triton operation 'tt.atomic_cas'}}
+    %unused = tt.atomic_cas acq_rel, gpu, %out, %compare, %value
+        : (!tt.ptr<f32>, f32, f32) -> f32
+    return
+  }
+}
+
+// -----
+
+module attributes {
+  triton_to_litert.buffer_roles = ["input", "input", "output"],
+  triton_to_litert.buffers_distinct,
+  triton_to_litert.launch_grid = array<i64: 1, 1, 1>
+} {
   func.func @unsupported_tts(
       %a: !tt.ptr<f32>, %b: !tt.ptr<f32>, %out: !tt.ptr<f32>,
       %num_x: i32, %num_y: i32, %num_z: i32,

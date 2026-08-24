@@ -91,7 +91,7 @@ module attributes {
     %c1024 = arith.constant 1024 : i32
     %tile_i32 = arith.muli %pid_x, %c1024 : i32
     %tile = arith.index_cast %tile_i32 : i32 to index
-    // expected-error @+1 {{milestone 1 requires the canonical launch offset to have one i32-to-index cast}}
+    // expected-error @+1 {{launch metadata did not fully normalize: unsupported launch-derived expression remains outside the canonical structured offset}}
     %unfoldable = arith.index_cast %num_x : i32 to index
     %a_ptr = tts.make_tptr %a to sizes: [1024], strides: [1],
         offsets: [%tile], shape: [0], order: []

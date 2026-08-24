@@ -339,6 +339,13 @@ analyzeMilestoneLaunchContractImpl(func::FuncOp function) {
       !casts.front().getOut().getType().isIndex()) {
     Operation *anchor =
         casts.size() > 1 ? casts[1].getOperation() : function.getOperation();
+    if (casts.size() > 1) {
+      anchor->emitError(
+          "Triton-to-LiteRT launch metadata did not fully normalize: "
+          "unsupported launch-derived expression remains outside the "
+          "canonical structured offset");
+      return failure();
+    }
     anchor->emitError(
         "Triton-to-LiteRT Bridge Input milestone 1 requires the canonical "
         "launch offset to have one i32-to-index cast");
